@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sistem Grading TBS dan Tenera Dura</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <section class="login-screen" id="loginScreen" aria-label="Kode masuk aplikasi">
+    <div class="login-card">
+      <div class="login-logo">G</div>
+      <h1>Sistem Grading TBS dan Tenera Dura</h1>
+      <p class="company-name">PT Kedap Sayaaq Dua</p>
+      <p>Masukkan kode akses untuk membuka aplikasi.</p>
+      <form id="loginForm" class="login-form">
+        <label>Kode Masuk
+          <input type="password" id="accessCodeInput" inputmode="numeric" autocomplete="off" placeholder="Masukkan kode" required />
+        </label>
+        <button type="submit" class="btn btn-primary">Masuk</button>
+        <div class="login-hint">Akses tersedia untuk Operator dan Staff.</div>
+        <div class="login-error" id="loginError" role="alert"></div>
+        <div class="firebase-login-status" id="loginFirebaseStatus">Aplikasi siap digunakan.</div>
+      </form>
+    </div>
+  </section>
+
+  <div class="app-shell locked auth-hidden" id="appShell">
+    <aside class="sidebar" id="sidebar">
+      <button class="mobile-close-menu" type="button" id="mobileCloseMenuButton" aria-label="Tutup menu">× Tutup</button>
+      <div class="brand">
+        <div class="brand-logo">G</div>
+        <div>
+          <strong id="brandAppName">Sistem Grading TBS</strong>
+          <span id="brandCompanyName">PT Kedap Sayaaq Dua</span>
+        </div>
+      </div>
+
+      <nav class="nav-menu" aria-label="Menu utama">
+        <button class="nav-link active" data-section="dashboardSection">Dashboard</button>
+        <button class="nav-link" data-section="inputSection">Input Data</button>
+        <button class="nav-link" data-section="dataSection">Data Transaksi</button>
+        <button class="nav-link" data-section="reportSection">Laporan WA</button>
+        <button class="nav-link" data-section="analysisSection">Rekap & Analisa</button>
+        <button class="nav-link" data-section="masterSection">Master Data</button>
+        <button class="nav-link" data-section="settingsSection">Pengaturan</button>
+      </nav>
+
+      <button class="exit-link" type="button" data-exit>Exit / Keluar</button>
+    </aside>
+
+    <div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div>
+
+    <main class="main-area">
+      <header class="topbar">
+        <button class="icon-button" id="mobileMenuButton" aria-label="Buka menu">☰</button>
+        <div>
+          <h1 id="pageTitle">Dashboard</h1>
+          <p id="pageSubtitle">Ringkasan Grading TBS dan Tenera Dura</p>
+        </div>
+        <div class="topbar-actions">
+          <span class="pill role-pill" id="roleLabel">Role: -</span>
+          <span class="pill firebase-status firebase-status-pending firebase-hidden" id="firebaseStatus">Sinkronisasi siap</span>
+          <button class="btn btn-outline btn-small firebase-hidden" type="button" id="firebaseReconnectButton">Cek Sinkron</button>
+          <span class="pill" id="todayLabel">-</span>
+          <button class="btn btn-outline" id="quickBackupButton">Backup</button>
+          <button class="btn btn-danger" type="button" data-exit>Exit</button>
+        </div>
+      </header>
+
+      <section class="section active" id="dashboardSection">
+        <div class="section-toolbar">
+          <div>
+            <h2>Dashboard Gabungan</h2>
+            <p>Pantau potongan grading, persentase masak, tenera, dan dura dalam satu layar.</p>
+          </div>
+          <div class="filter-bar compact">
+            <select id="dashboardPreset">
+              <option value="today">Hari ini</option>
+              <option value="yesterday">Kemarin</option>
+              <option value="week">Minggu ini</option>
+              <option value="month">Bulan ini</option>
+              <option value="all">Semua data</option>
+              <option value="custom">Custom</option>
+            </select>
+            <input type="date" id="dashboardStart" />
+            <input type="date" id="dashboardEnd" />
+            <button class="btn btn-primary" id="refreshDashboardButton">Terapkan</button>
+          </div>
+        </div>
+
+        <div class="card-grid summary-grid" id="dashboardCards"></div>
+
+        <div class="grid two-columns">
+          <div class="card">
+            <div class="card-header">
+              <h3>Analisa Grading</h3>
+              <span class="badge badge-green">TBS</span>
+            </div>
+            <div id="dashboardGradingHighlights" class="mini-list"></div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <h3>Analisa Tenera Dura</h3>
+              <span class="badge badge-green">Sampel</span>
+            </div>
+            <div id="dashboardTdHighlights" class="mini-list"></div>
+          </div>
+        </div>
+
+        <div class="grid two-columns">
+          <div class="card">
+            <div class="card-header">
+              <h3>Grafik Potongan per Supplier</h3>
+            </div>
+            <div id="gradingSupplierChart" class="bar-chart"></div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <h3>Grafik Tenera per Supplier</h3>
+            </div>
+            <div id="tdSupplierChart" class="bar-chart"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="inputSection">
+        <div class="section-toolbar">
+          <div>
+            <h2>Input Data</h2>
+            <p>Input grading TBS dan input sampel tenera dura dibuat terpisah tetapi memakai master sopir, plat, dan supplier yang sama.</p>
+          </div>
+        </div>
+
+        <div class="tabs">
+          <button class="tab-button active" data-tab-group="inputTabs" data-tab="gradingInputTab">Input Grading TBS</button>
+          <button class="tab-button" data-tab-group="inputTabs" data-tab="tdInputTab">Input Tenera Dura</button>
+        </div>
+
+        <div class="tab-content active" id="gradingInputTab" data-tab-group="inputTabs">
+          <form id="gradingForm" class="form-layout">
+            <div class="card form-card">
+              <div class="card-header"><h3>Informasi Pengiriman</h3></div>
+              <div class="form-grid">
+                <label>Tanggal<input type="date" name="date" required /></label>
+                <label>Nomor SPK<input type="text" name="spk" placeholder="Opsional / manual" /></label>
+                <label>Nama Sopir<input type="text" name="driver" list="driversList" placeholder="Ketik nama sopir" required /></label>
+                <label>Nomor Polisi<input type="text" name="plate" placeholder="Contoh: KB 1234 XX" required /></label>
+                <label>Supplier<select name="supplier" class="supplier-select" required></select></label>
+                <label>Nomor Tiket / DO<input type="text" name="ticket" placeholder="Opsional" /></label>
+                <label>Petugas Grading<input type="text" name="officer" list="officersList" placeholder="Ketik / pilih petugas" /></label>
+              </div>
+            </div>
+
+            <div class="card form-card wide-card">
+              <div class="card-header"><h3>Input Janjang dan Grading</h3></div>
+              <div class="form-grid small-grid">
+                <label>Total Janjang<input type="number" name="totalJanjang" min="0" step="1" placeholder="0" required /></label>
+              </div>
+
+              <div class="table-wrap input-table-wrap">
+                <table class="data-table compact-table" id="gradingInputTable">
+                  <thead>
+                    <tr>
+                      <th>Kategori</th>
+                      <th>Jumlah Janjang</th>
+                      <th>Persentase</th>
+                      <th>Potongan</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr data-cat="mentah"><td>Mentah</td><td><input class="grading-count" type="number" name="mentah" min="0" step="1" value="0" /></td><td class="pct">0%</td><td class="cut">0%</td></tr>
+                    <tr data-cat="mengkal"><td>Mengkal</td><td><input class="grading-count" type="number" name="mengkal" min="0" step="1" value="0" /></td><td class="pct">0%</td><td class="cut">0%</td></tr>
+                    <tr data-cat="tankos"><td>Tandan Kosong / Tankos</td><td><input class="grading-count" type="number" name="tankos" min="0" step="1" value="0" /></td><td class="pct">0%</td><td class="cut">0%</td></tr>
+                    <tr data-cat="overripe"><td>Overripe</td><td><input class="grading-count" type="number" name="overripe" min="0" step="1" value="0" /></td><td class="pct">0%</td><td class="cut">0%</td></tr>
+                    <tr data-cat="busuk"><td>Busuk</td><td><input class="grading-count" type="number" name="busuk" min="0" step="1" value="0" /></td><td class="pct">0%</td><td class="cut">0%</td></tr>
+                    <tr data-cat="tangkaiPanjang"><td>Tangkai Panjang</td><td><input class="grading-count" type="number" name="tangkaiPanjang" min="0" step="1" value="0" /></td><td class="pct">0%</td><td class="cut">0%</td></tr>
+                    <tr data-cat="partheno"><td>Partheno</td><td><input class="grading-count" type="number" name="partheno" min="0" step="1" value="0" /></td><td class="pct">0%</td><td class="cut">0%</td></tr>
+                    <tr data-cat="makanTikus"><td>Makan Tikus</td><td><input class="grading-count" type="number" name="makanTikus" min="0" step="1" value="0" /></td><td class="pct">0%</td><td class="cut">0%</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <label>Catatan<textarea name="note" rows="3" placeholder="Opsional"></textarea></label>
+              <div class="button-row">
+                <button type="submit" class="btn btn-primary">Simpan Data</button>
+                <button type="button" class="btn btn-secondary" id="saveGradingReportButton">Simpan dan Buat Laporan WA</button>
+                <button type="reset" class="btn btn-outline">Reset Form</button>
+              </div>
+            </div>
+
+            <aside class="card result-card sticky-result" id="gradingResultPanel">
+              <div class="card-header"><h3>Hasil Grading</h3></div>
+              <div id="gradingResultList" class="result-list"></div>
+            </aside>
+          </form>
+        </div>
+
+        <div class="tab-content" id="tdInputTab" data-tab-group="inputTabs">
+          <form id="tdForm" class="form-layout">
+            <div class="card form-card">
+              <div class="card-header"><h3>Informasi Pengiriman</h3></div>
+              <div class="form-grid">
+                <label>Tanggal<input type="date" name="date" required /></label>
+                <label>Nomor SPK<input type="text" name="spk" placeholder="Opsional / manual" /></label>
+                <label>Nama Sopir<input type="text" name="driver" list="driversList" placeholder="Ketik nama sopir" required /></label>
+                <label>Nomor Polisi<input type="text" name="plate" placeholder="Contoh: KB 1234 XX" required /></label>
+                <label>Supplier<select name="supplier" class="supplier-select" required></select></label>
+                <label>Nomor Tiket / DO<input type="text" name="ticket" placeholder="Opsional" /></label>
+                <label>Petugas Input<input type="text" name="officer" list="officersList" placeholder="Ketik / pilih petugas" /></label>
+              </div>
+            </div>
+
+            <div class="card form-card wide-card">
+              <div class="card-header"><h3>Input Sampel Tenera Dura</h3></div>
+              <div class="form-grid small-grid">
+                <label>Tenera<input type="number" name="tenera" min="0" step="1" value="0" required /></label>
+                <label>Dura<input type="number" name="dura" min="0" step="1" value="0" required /></label>
+              </div>
+              <label>Catatan<textarea name="note" rows="3" placeholder="Opsional"></textarea></label>
+              <div class="button-row">
+                <button type="submit" class="btn btn-primary">Simpan Data</button>
+                <button type="button" class="btn btn-secondary" id="saveTdReportButton">Simpan dan Buat Laporan WA</button>
+                <button type="reset" class="btn btn-outline">Reset Form</button>
+              </div>
+            </div>
+
+            <aside class="card result-card sticky-result" id="tdResultPanel">
+              <div class="card-header"><h3>Hasil Tenera Dura</h3></div>
+              <div id="tdResultList" class="result-list"></div>
+            </aside>
+          </form>
+        </div>
+      </section>
+
+      <section class="section" id="dataSection">
+        <div class="section-toolbar">
+          <div>
+            <h2>Data Transaksi</h2>
+            <p>Data grading dan tenera dura tersimpan terpisah, tetapi bisa difilter memakai tanggal, sopir, supplier, dan plat.</p>
+          </div>
+        </div>
+
+        <div class="filter-card">
+          <div class="filter-bar">
+            <select id="dataPreset"><option value="all">Semua data</option><option value="today">Hari ini</option><option value="yesterday">Kemarin</option><option value="week">Minggu ini</option><option value="month">Bulan ini</option><option value="custom">Custom</option></select>
+            <input type="date" id="dataStart" />
+            <input type="date" id="dataEnd" />
+            <input type="search" id="dataSearch" placeholder="Cari sopir, plat, supplier..." />
+            <select id="dataSupplier" class="supplier-filter"><option value="">Semua supplier</option></select>
+            <button class="btn btn-primary" id="applyDataFilterButton">Filter</button>
+          </div>
+        </div>
+
+        <div class="tabs">
+          <button class="tab-button active" data-tab-group="dataTabs" data-tab="gradingDataTab">Data Grading TBS</button>
+          <button class="tab-button" data-tab-group="dataTabs" data-tab="tdDataTab">Data Tenera Dura</button>
+        </div>
+
+        <div class="button-row export-row">
+          <button class="btn btn-secondary" id="exportGradingButton">Export Excel Grading</button>
+          <button class="btn btn-secondary" id="exportTdButton">Export Excel Tenera Dura</button>
+          <button class="btn btn-primary" id="exportCombinedButton">Export Excel Gabungan</button>
+        </div>
+
+        <div class="card data-jpg-card">
+          <div class="card-header">
+            <div>
+              <h3>Export JPG Data Transaksi Sesuai Filter</h3>
+              <p class="muted">Gunakan filter data di atas, lalu pilih tab Grading/Tenera Dura. JPG bisa di-download saja atau di-share lewat menu share HP ke WhatsApp.</p>
+            </div>
+            <span class="badge badge-green">JPG Filter</span>
+          </div>
+          <div class="button-row">
+            <button class="btn btn-outline" id="downloadDataFilteredJpgButton" type="button">Download JPG Data Filter</button>
+            <button class="btn btn-primary" id="shareDataFilteredJpgButton" type="button">Download & Share WA Data Filter</button>
+          </div>
+        </div>
+
+        <div class="tab-content active" id="gradingDataTab" data-tab-group="dataTabs">
+          <div class="card"><div class="table-wrap"><table class="data-table" id="gradingDataTable"></table></div></div>
+        </div>
+        <div class="tab-content" id="tdDataTab" data-tab-group="dataTabs">
+          <div class="card"><div class="table-wrap"><table class="data-table" id="tdDataTable"></table></div></div>
+        </div>
+      </section>
+
+      <section class="section" id="reportSection">
+        <div class="section-toolbar">
+          <div>
+            <h2>Laporan WA</h2>
+            <p>Buat laporan siap salin untuk WhatsApp, bisa per transaksi, overall, per supplier, atau per sopir.</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="form-grid report-grid">
+            <label>Jenis Modul<select id="reportModule"><option value="grading">Grading TBS</option><option value="td">Tenera Dura</option></select></label>
+            <label>Jenis Laporan<select id="reportType"><option value="transaction">Per Transaksi</option><option value="overall">Overall</option><option value="supplier">Rincian Per Supplier</option><option value="driver">Rincian Per Sopir</option></select></label>
+            <label>Periode<select id="reportPreset"><option value="today">Hari ini</option><option value="yesterday">Kemarin</option><option value="week">Minggu ini</option><option value="month">Bulan ini</option><option value="all">Semua data</option><option value="custom">Custom</option></select></label>
+            <label>Tanggal Awal<input type="date" id="reportStart" /></label>
+            <label>Tanggal Akhir<input type="date" id="reportEnd" /></label>
+            <label>Supplier<select id="reportSupplier" class="supplier-filter"><option value="">Semua supplier</option></select></label>
+            <label>Sopir<input type="text" id="reportDriver" list="driversList" placeholder="Semua sopir" /></label>
+            <label>Plat<input type="text" id="reportPlate" placeholder="Semua plat" /></label>
+          </div>
+          <div class="button-row">
+            <button class="btn btn-primary" id="generateReportButton">Generate Laporan</button>
+            <button class="btn btn-secondary" id="copyReportButton">Copy Laporan WA</button>
+            <button class="btn btn-outline" id="downloadReportButton">Download TXT</button>
+            <button class="btn btn-outline" id="openWhatsappButton">Buka WhatsApp</button>
+            <button class="btn btn-secondary" id="previewJpgReportButton" type="button">Preview JPG</button>
+            <button class="btn btn-outline" id="downloadJpgReportButton" type="button">Download JPG</button>
+            <button class="btn btn-primary" id="shareJpgReportButton" type="button">Download & Share WA</button>
+          </div>
+        </div>
+
+        <div class="card daily-jpg-card">
+          <div class="card-header">
+            <div>
+              <h3>Rekap Harian JPG</h3>
+              <p class="muted">Buat rekap transaksi harian dalam format JPG. Bisa semua data, per supplier, atau per sopir.</p>
+            </div>
+            <span class="badge badge-green">JPG Harian</span>
+          </div>
+          <div class="form-grid report-grid">
+            <label>Jenis Data
+              <select id="dailyJpgModule">
+                <option value="grading">Grading TBS</option>
+                <option value="td">Tenera Dura</option>
+                <option value="combined">Gabungan</option>
+              </select>
+            </label>
+            <label>Tanggal Rekap<input type="date" id="dailyJpgDate" /></label>
+            <label>Rincian
+              <select id="dailyJpgGroup">
+                <option value="overall">Semua Data Harian</option>
+                <option value="supplier">Per Supplier</option>
+                <option value="driver">Per Sopir</option>
+              </select>
+            </label>
+            <label>Supplier<select id="dailyJpgSupplier" class="supplier-filter"><option value="">Semua supplier</option></select></label>
+            <label>Sopir<input type="text" id="dailyJpgDriver" list="driversList" placeholder="Semua sopir" /></label>
+          </div>
+          <div class="button-row">
+            <button class="btn btn-secondary" id="previewDailyJpgButton" type="button">Preview Rekap JPG</button>
+            <button class="btn btn-outline" id="downloadDailyJpgButton" type="button">Download JPG</button>
+            <button class="btn btn-primary" id="shareDailyJpgButton" type="button">Download & Share WA</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <textarea id="reportOutput" class="report-output" placeholder="Laporan akan muncul di sini..." spellcheck="false"></textarea>
+        </div>
+      </section>
+
+      <section class="section" id="analysisSection">
+        <div class="section-toolbar">
+          <div>
+            <h2>Rekap & Analisa</h2>
+            <p>Rekap weighted average untuk overall, supplier, sopir, dan semua data lengkap per kategori.</p>
+          </div>
+          <div class="filter-bar compact">
+            <select id="analysisPreset"><option value="month">Bulan ini</option><option value="today">Hari ini</option><option value="week">Minggu ini</option><option value="all">Semua data</option><option value="custom">Custom</option></select>
+            <input type="date" id="analysisStart" />
+            <input type="date" id="analysisEnd" />
+            <button class="btn btn-primary" id="refreshAnalysisButton">Terapkan</button>
+            <button class="btn btn-secondary" id="analysisWaGradingButton" type="button">WA Grading Filter</button>
+            <button class="btn btn-secondary" id="analysisWaTdButton" type="button">WA Tenera Dura Filter</button>
+          </div>
+        </div>
+
+        <div class="tabs">
+          <button class="tab-button active" data-tab-group="analysisTabs" data-tab="analysisSummaryTab">Ringkasan</button>
+          <button class="tab-button" data-tab-group="analysisTabs" data-tab="analysisSupplierTab">Rincian Supplier</button>
+          <button class="tab-button" data-tab-group="analysisTabs" data-tab="analysisDriverTab">Rincian Sopir</button>
+          <button class="tab-button" data-tab-group="analysisTabs" data-tab="analysisAllDataTab">Semua Data</button>
+          <button class="tab-button" data-tab-group="analysisTabs" data-tab="analysisRankingTab">Ranking</button>
+        </div>
+
+        <div class="tab-content active" id="analysisSummaryTab" data-tab-group="analysisTabs">
+          <div class="card-grid summary-grid" id="analysisCards"></div>
+          <div class="grid two-columns">
+            <div class="card"><div class="card-header"><h3>Overall Grading</h3></div><div id="analysisOverallGrading" class="mini-list"></div></div>
+            <div class="card"><div class="card-header"><h3>Overall Tenera Dura</h3></div><div id="analysisOverallTd" class="mini-list"></div></div>
+          </div>
+        </div>
+
+        <div class="tab-content" id="analysisSupplierTab" data-tab-group="analysisTabs">
+          <div class="analysis-stack">
+            <div class="card"><div class="card-header"><h3>Per Supplier - Grading Lengkap</h3><span class="badge badge-green">Semua kategori</span></div><div class="table-wrap"><table class="data-table wide-table" id="supplierGradingTable"></table></div></div>
+            <div class="card"><div class="card-header"><h3>Per Supplier - Tenera Dura Lengkap</h3><span class="badge badge-green">Tenera & Dura</span></div><div class="table-wrap"><table class="data-table wide-table" id="supplierTdTable"></table></div></div>
+          </div>
+        </div>
+
+        <div class="tab-content" id="analysisDriverTab" data-tab-group="analysisTabs">
+          <div class="analysis-stack">
+            <div class="card"><div class="card-header"><h3>Per Sopir - Grading Lengkap</h3><span class="badge badge-green">Semua kategori</span></div><div class="table-wrap"><table class="data-table wide-table" id="driverGradingTable"></table></div></div>
+            <div class="card"><div class="card-header"><h3>Per Sopir - Tenera Dura Lengkap</h3><span class="badge badge-green">Tenera & Dura</span></div><div class="table-wrap"><table class="data-table wide-table" id="driverTdTable"></table></div></div>
+          </div>
+        </div>
+
+        <div class="tab-content" id="analysisAllDataTab" data-tab-group="analysisTabs">
+          <div class="analysis-stack">
+            <div class="card"><div class="card-header"><h3>Semua Data Grading TBS</h3><span class="badge badge-green">Detail transaksi</span></div><div class="table-wrap"><table class="data-table mega-table" id="analysisAllGradingTable"></table></div></div>
+            <div class="card"><div class="card-header"><h3>Semua Data Tenera Dura</h3><span class="badge badge-green">Detail transaksi</span></div><div class="table-wrap"><table class="data-table wide-table" id="analysisAllTdTable"></table></div></div>
+          </div>
+        </div>
+
+        <div class="tab-content" id="analysisRankingTab" data-tab-group="analysisTabs">
+          <div class="grid two-columns">
+            <div class="card"><div class="card-header"><h3>Ranking Supplier</h3></div><div id="rankingSupplier" class="mini-list"></div></div>
+            <div class="card"><div class="card-header"><h3>Ranking Sopir</h3></div><div id="rankingDriver" class="mini-list"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="masterSection">
+        <div class="section-toolbar">
+          <div>
+            <h2>Master Data</h2>
+            <p>Kelola sopir, supplier, dan plat untuk autocomplete input.</p>
+          </div>
+        </div>
+
+        <div class="filter-card">
+          <div class="filter-bar">
+            <select id="masterPreset"><option value="month">Bulan ini</option><option value="today">Hari ini</option><option value="yesterday">Kemarin</option><option value="week">Minggu ini</option><option value="all">Semua data</option><option value="custom">Custom</option></select>
+            <input type="date" id="masterStart" />
+            <input type="date" id="masterEnd" />
+            <button class="btn btn-primary" id="refreshMasterButton" type="button">Terapkan Master Data</button>
+            <button class="btn btn-secondary" id="exportMasterExcelButton" type="button">Export Excel Master Data</button>
+          </div>
+        </div>
+
+        <div class="tabs">
+          <button class="tab-button active" data-tab-group="masterTabs" data-tab="masterGradingTab">Master Grading</button>
+          <button class="tab-button" data-tab-group="masterTabs" data-tab="masterTdTab">Master Tenera Dura</button>
+          <button class="tab-button" data-tab-group="masterTabs" data-tab="driverMasterTab">Data Sopir</button>
+          <button class="tab-button" data-tab-group="masterTabs" data-tab="supplierMasterTab">Data Supplier</button>
+          <button class="tab-button" data-tab-group="masterTabs" data-tab="plateMasterTab">Data Plat</button>
+        </div>
+
+        <div class="tab-content active" id="masterGradingTab" data-tab-group="masterTabs">
+          <div class="card"><div class="card-header"><h3>Master Grading - Supplier</h3><span class="badge badge-green">Grading</span></div><div class="table-wrap scroll-x"><table class="data-table wide-table" id="masterGradingSupplierTable"></table></div></div>
+          <div class="card"><div class="card-header"><h3>Master Grading - Sopir</h3><span class="badge badge-green">Grading</span></div><div class="table-wrap scroll-x"><table class="data-table wide-table" id="masterGradingDriverTable"></table></div></div>
+          <div class="card"><div class="card-header"><h3>Master Grading - Plat</h3><span class="badge badge-green">Grading</span></div><div class="table-wrap scroll-x"><table class="data-table" id="masterGradingPlateTable"></table></div></div>
+        </div>
+
+        <div class="tab-content" id="masterTdTab" data-tab-group="masterTabs">
+          <div class="card"><div class="card-header"><h3>Master Tenera Dura - Supplier</h3><span class="badge badge-green">Tenera Dura</span></div><div class="table-wrap scroll-x"><table class="data-table wide-table" id="masterTdSupplierTable"></table></div></div>
+          <div class="card"><div class="card-header"><h3>Master Tenera Dura - Sopir</h3><span class="badge badge-green">Tenera Dura</span></div><div class="table-wrap scroll-x"><table class="data-table wide-table" id="masterTdDriverTable"></table></div></div>
+          <div class="card"><div class="card-header"><h3>Master Tenera Dura - Plat</h3><span class="badge badge-green">Tenera Dura</span></div><div class="table-wrap scroll-x"><table class="data-table" id="masterTdPlateTable"></table></div></div>
+        </div>
+
+        <div class="tab-content" id="driverMasterTab" data-tab-group="masterTabs">
+          <div class="card">
+            <div class="form-grid">
+              <label>Nama Sopir<input type="text" id="masterDriverName" placeholder="Nama sopir" /></label>
+              <label>Nomor Polisi Default<input type="text" id="masterDriverPlate" placeholder="Plat default" /></label>
+              <label>Supplier Default<select id="masterDriverSupplier" class="supplier-select"></select></label>
+            </div>
+            <div class="button-row"><button class="btn btn-primary" id="saveDriverButton" data-staff-only>Simpan Sopir</button></div>
+          </div>
+          <div class="card"><div class="table-wrap"><table class="data-table" id="driverMasterTable"></table></div></div>
+        </div>
+
+        <div class="tab-content" id="supplierMasterTab" data-tab-group="masterTabs">
+          <div class="card">
+            <div class="form-grid small-grid">
+              <label>Nama Supplier<input type="text" id="masterSupplierName" placeholder="Nama supplier" /></label>
+              <label>Status<select id="masterSupplierStatus"><option value="active">Aktif</option><option value="inactive">Nonaktif</option></select></label>
+            </div>
+            <div class="button-row">
+              <button class="btn btn-primary" id="saveSupplierButton" data-staff-only>Simpan Supplier</button>
+              <button class="btn btn-outline" id="newSupplierButton" data-staff-only type="button">+ Tambah Supplier Baru</button>
+            </div>
+            <p class="muted">Saat mengedit nama supplier, aplikasi akan menanyakan apakah nama di transaksi lama ikut diubah.</p>
+          </div>
+          <div class="card"><div class="table-wrap"><table class="data-table" id="supplierMasterTable"></table></div></div>
+        </div>
+
+        <div class="tab-content" id="plateMasterTab" data-tab-group="masterTabs">
+          <div class="card"><div class="table-wrap"><table class="data-table" id="plateMasterTable"></table></div></div>
+        </div>
+      </section>
+
+      <section class="section" id="settingsSection">
+        <div class="section-toolbar">
+          <div>
+            <h2>Pengaturan</h2>
+            <p>Atur rumus potongan, status kualitas, status tenera dura, dan backup data.</p>
+          </div>
+        </div>
+
+        <div class="grid two-columns">
+          <div class="card">
+            <div class="card-header"><h3>Pengaturan Umum</h3></div>
+            <div class="form-grid small-grid">
+              <label>Nama Aplikasi<input type="text" id="settingAppName" /></label>
+              <label>Nama Perusahaan<input type="text" id="settingCompanyName" /></label>
+            </div>
+            <button class="btn btn-primary" id="saveGeneralSettingsButton" data-staff-only>Simpan Umum</button>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h3>Backup & Restore</h3></div>
+            <p class="muted">Backup menyimpan semua data lokal ke file JSON.</p>
+            <div class="button-row">
+              <button class="btn btn-secondary" id="exportBackupButton">Export Backup JSON</button>
+              <label class="btn btn-outline file-label" data-staff-only>Import Backup<input type="file" id="importBackupInput" accept="application/json" hidden /></label>
+              <button class="btn btn-danger" id="clearAllDataButton" data-staff-only>Hapus Semua Data</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid two-columns">
+          <div class="card">
+            <div class="card-header"><h3>Rumus Grading</h3></div>
+            <div class="form-grid small-grid settings-grid">
+              <label>Potongan Dasar (%)<input type="number" id="setBaseCut" step="0.01" /></label>
+              <label>Penerapan Potongan Dasar<select id="gradingSettingsApplyMode"><option value="new">Hanya input baru</option><option value="all">Terapkan ke semua data grading lama</option><option value="filtered">Terapkan sesuai filter Rekap & Analisa</option></select></label>
+              <label>Mentah (%)<input type="number" id="setMentahCut" step="0.01" /></label>
+              <label>Mengkal (%)<input type="number" id="setMengkalCut" step="0.01" /></label>
+              <label>Tankos (%)<input type="number" id="setTankosCut" step="0.01" /></label>
+              <label>Toleransi Overripe (%)<input type="number" id="setOverripeTolerance" step="0.01" /></label>
+              <label>Potongan Overripe (%)<input type="number" id="setOverripeCut" step="0.01" /></label>
+              <label>Busuk (%)<input type="number" id="setBusukCut" step="0.01" /></label>
+              <label>Tangkai Panjang (%)<input type="number" id="setTangkaiCut" step="0.01" /></label>
+              <label>Partheno (%)<input type="number" id="setParthenoCut" step="0.01" /></label>
+              <label>Makan Tikus (%)<input type="number" id="setMakanTikusCut" step="0.01" /></label>
+              <label>Batas Bagus Max (%)<input type="number" id="setGoodMax" step="0.01" /></label>
+              <label>Batas Sedang Max (%)<input type="number" id="setMediumMax" step="0.01" /></label>
+            </div>
+            <div class="button-row"><button class="btn btn-primary" id="saveGradingSettingsButton" data-staff-only>Simpan Rumus Grading</button><button class="btn btn-outline" id="resetGradingSettingsButton" data-staff-only>Default</button></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h3>Pengaturan Tenera Dura</h3></div>
+            <div class="form-grid small-grid settings-grid">
+              <label>Label Tenera<input type="text" id="setTeneraLabel" /></label>
+              <label>Label Dura<input type="text" id="setDuraLabel" /></label>
+              <label>Batas Seimbang (%)<input type="number" id="setBalanceTolerance" step="0.01" /></label>
+              <label>Tenera Baik Minimal (%)<input type="number" id="setGoodTeneraMin" step="0.01" /></label>
+              <label>Dura Tinggi Maksimal (%)<input type="number" id="setHighDuraMax" step="0.01" /></label>
+            </div>
+            <div class="button-row"><button class="btn btn-primary" id="saveTdSettingsButton" data-staff-only>Simpan Tenera Dura</button><button class="btn btn-outline" id="resetTdSettingsButton" data-staff-only>Default</button></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <datalist id="driversList"></datalist>
+  <datalist id="officersList"></datalist>
+
+  <div class="modal" id="appModal" aria-hidden="true">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modalTitle">Detail</h3>
+        <button class="icon-button" data-close-modal aria-label="Tutup">x</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+      <div class="modal-footer" id="modalFooter"></div>
+    </div>
+  </div>
+
+  <div class="jpg-report-host" id="jpgReportHost" aria-hidden="true"></div>
+  <div class="toast" id="toast"></div>
+</body>
+</html>
